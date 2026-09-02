@@ -1,0 +1,104 @@
+name: orders-api-cicd
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - src/**
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Shorten commit id
+        shell: bash
+        run: |
+          echo "COMMIT_ID=${GITHUB_SHA::6}" >> "$GITHUB_ENV"
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          tags: whiiplash/orders-api:${{ env.COMMIT_ID }}
+    outputs:
+      commit_id: ${{ env.COMMIT_ID }}
+
+  cd:
+    needs: ci
+    runs-on: arc-org-runner-set
+    permissions:
+      contents: write
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Modify values file
+        shell: bash
+        run: |
+          IMAGE_TAG="${{needs.ci.outputs.commit_id}}"
+          VALUES_FILE="charts/orders-api/values-dev.yaml"
+
+          if grep -q "^image:" "$VALUES_FILE"; then
+            if grep -q "^  tag:" "$VALUES_FILE"; then
+              sed -i "s|^  tag:.*$|  tag: '${IMAGE_TAG}'|" "$VALUES_FILE"
+            else
+              sed -i "/^image:/a\  tag: '${IMAGE_TAG}'" "$VALUES_FILE"
+            fi
+          else
+            printf "\nimage:\n  tag: '%s'\n" "$IMAGE_TAG" >> "$VALUES_FILE"
+          fi
+
+      - name: Commit changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: 'Updates values.yaml with commit ${{needs.ci.outputs.commit_id}}'
+
+      - name: Install argocd
+        shell: bash
+        run: |
+          curl -ksSL -o argocd https://argocd-server.argocd/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv ./argocd /usr/local/bin/argocd
+
+      - name: argocd login
+        shell: bash
+        run: |
+          argocd login argocd-server.argocd \
+            --insecure  \
+            --grpc-web \
+            --username admin \
+            --password  ${{ secrets.ARGOCD_PASSWORD }}
+
+      - name: Ensure argocd repo and app
+        shell: bash
+        run: |
+
+          # Connects the argocd repo
+          repo="https://github.com/whiiplash-platform-lab/orders-api.git"
+          argocd repo list | grep -q $repo || argocd repo add $repo
+
+          # Creates the argocd app
+          argocd app get orders-api || argocd app create orders-api \
+            --repo $repo \
+            --path charts/orders-api \
+            --dest-namespace dev \
+            --dest-server https://kubernetes.default.svc \
+            --values values-dev.yaml \
+            --revision main \
+            --sync-policy manual \
+            --sync-option CreateNamespace=true
+
+      - name: Argocd app sync
+        shell: bash
+        run: |
+          argocd app sync orders-api
+          argocd app wait orders-api --timeout 180

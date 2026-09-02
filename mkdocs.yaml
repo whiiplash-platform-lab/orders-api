@@ -1,0 +1,12 @@
+site_name: 'orders-api'
+site_description: 'Main documentation for the orders-api'
+repo_url: https://github.com/whiiplash-platform-lab/orders-api
+edit_uri: edit/main/docs
+
+plugins:
+  - techdocs-core
+
+# For sidebar navigation on https://backstage.io/, see `microsite/sidebars.json`
+nav:
+  - Overview:
+      - Getting started: 'docs/index.md'
