@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - src/**
+      - requirements.txt
+      - Dockerfile
     branches:
       - main
 
