@@ -6,6 +6,8 @@ metadata:
   annotations:
     github.com/project-slug: whiiplash-platform-lab/orders-api
     backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/name=orders-api'
+    backstage.io/kubernetes-namespace: dev
 spec:
   type: service
   owner: development
